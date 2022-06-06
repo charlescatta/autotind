@@ -1,12 +1,11 @@
 import json
 from typing import Optional
 from sqlalchemy import String, Column, ForeignKey, DateTime, create_engine
-from sqlalchemy.orm import relationship, sessionmaker, Session
+from sqlalchemy.orm import relationship, sessionmaker, Session, scoped_session
 from sqlalchemy.ext.declarative import declarative_base
 from enum import Enum
 from pathlib import Path
 from dateutil import parser
-import requests
 from .config import config
 
 class PType(Enum):
@@ -18,17 +17,21 @@ class PType(Enum):
 
 class ImageStatus(Enum):
     NOTDOWNLOADED = 'not-downloaded'
+    DOWNLOADING = 'downloading'
     DOWNLOADED = 'downloaded'
     ERROR = 'error'
 
 Base = declarative_base()
 
-def init_db() -> Session:
-    engine = create_engine(config.DB_URL)
-    Base.metadata.create_all(engine)
-    Session = sessionmaker(bind=engine)
-
-    return Session()
+class DB:
+    def __init__(self):
+        self.engine = create_engine(config.DB_URL)
+        Base.metadata.create_all(self.engine)
+        sess_factory = sessionmaker(bind=self.engine)
+        self.Session = scoped_session(sess_factory)
+    
+    def create_session(self) -> Session:
+        return self.Session()
 
 class Photo(Base):
     __tablename__ = 'photo'
@@ -51,6 +54,8 @@ class Photo(Base):
     def save_path(self):
         return Path(config.IMG_SAVE_PATH) / self.person_id / self.filename
 
+    def __repr__(self) -> str:
+        return f"<Photo(id='{self.id}', person_id='{self.person_id}', filename='{self.filename}', status='{self.status}')>"
     @staticmethod
     def from_json(person_id: str, photo_data: dict) -> Optional['Photo']:
         if 'crop_info' in photo_data:
@@ -65,27 +70,6 @@ class Photo(Base):
             crop_info=crop_info,
             status=ImageStatus.NOTDOWNLOADED.value
         )
-    
-    def save(self, session: Session):
-        self.save_path.mkdir(parents=True, exist_ok=True)
-        if self.save_path.exists():
-            self.status = ImageStatus.DOWNLOADED.value
-        else:
-            with open(self.save_path, 'wb') as f:
-                try:
-                    response = requests.get(self.url, stream=True, headers={ "Referer": "https://tinder.com" })
-                    response.raise_for_status()
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if not chunk:
-                            return
-                        f.write(chunk)
-                    f.flush()
-                except:
-                    self.status = ImageStatus.ERROR.value
-                else:
-                    self.status = ImageStatus.DOWNLOADED.value
-        session.merge(self)
-        session.commit()
 
 class Person(Base):
     __tablename__ = 'person'
@@ -95,6 +79,9 @@ class Person(Base):
     birthday = Column(DateTime)
     photos = relationship("Photo", backref="person")
 
+    def __repr__(self) -> str:
+        return f"<Person(id={self.id}, name={self.name}, birthday={self.birthday} photos={len(self.photos)}) type={self.type}>"
+    
     @staticmethod
     def from_json(user: dict, type: PType = PType.REC) -> Optional['Person']:
         user_id = user.get('_id')
@@ -113,7 +100,7 @@ class Person(Base):
 
     def save(self, session: Session):
         for photo in self.photos:
-            photo.save(session)
+            session.merge(photo)
         session.merge(self)
         session.commit()
 
