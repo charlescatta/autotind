@@ -1,7 +1,7 @@
 import json
 import requests
 from PIL import Image
-from typing import Any
+from typing import Any, Dict, List, Union
 from pathlib import Path
 from loguru import logger
 from dateutil import parser
@@ -12,7 +12,7 @@ from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, cre
 
 Base = declarative_base()
 
-def is_valid_image(path: str | Path) -> bool:
+def is_valid_image(path: Union[str, Path]) -> bool:
     try:
         Image.open(path)
         return True
@@ -155,10 +155,10 @@ class PersonRepo:
         session.query(PersonDB).where(PersonDB._id == id).update({ "label": Label.DISLIKE.value })
         session.commit()
 
-    def get_all(self) -> list[Person]:
+    def get_all(self) -> List[Person]:
         session = self.Session()
         return [ p.to_person() for p in session.query(PersonDB).all() ]
 
-    def where(self, condition: dict[str, Any]) -> list[Person]:
+    def where(self, condition: Dict[str, Any]) -> List[Person]:
         session = self.Session()
         return [ p.to_person() for p in session.query(PersonDB).filter_by(**condition).all() ]

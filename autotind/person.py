@@ -2,7 +2,7 @@ from dataclasses import dataclass, fields, asdict
 from datetime import date
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any, List, Optional, Tuple, Union
 from loguru import logger
 
 
@@ -12,7 +12,7 @@ class Label(Enum):
     MATCH = 'match'
     LIKE = 'like'
 
-def pick_dict(d: dict, keys: list[str | Tuple[str, Any]]) -> dict:
+def pick_dict(d: dict, keys: List[Union[str, Tuple[str, Any]]]) -> dict:
     output = {}
     for key in keys:
         value = d.get(key, None)
@@ -38,7 +38,7 @@ class Photo:
     def to_dict(self) -> dict:
         return asdict(self)
 
-    def get_path(self, root_dir: str | Path) -> Path:
+    def get_path(self, root_dir: Union[str, Path]) -> Path:
         return Path(root_dir) / Path(self.user_id) / Path(self.fileName)
 
     @staticmethod
@@ -60,7 +60,7 @@ class Person:
     label: Label
     name: str
     birth_date: date
-    photos: list[Photo]
+    photos: List[Photo]
     bio: str = None
     gender: int = None
     distance_mi: int = -1
@@ -71,7 +71,7 @@ class Person:
     def to_dict(self) -> dict:
         return asdict(self)
     
-    def get_path(self, root_dir: str | Path) -> Path:
+    def get_path(self, root_dir: Union[str, Path]) -> Path:
         return Path(root_dir) / Path(self._id)
 
     @staticmethod

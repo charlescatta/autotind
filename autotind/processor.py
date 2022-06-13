@@ -2,7 +2,7 @@ import signal
 import multiprocessing as mp
 from loguru import logger
 from queue import Empty
-from typing import Any, Callable
+from typing import Any, Callable, Dict
 
 class Worker(mp.Process):
     def __init__(self, id: str, processor: "Processor"):
@@ -45,7 +45,7 @@ class Worker(mp.Process):
             logger.error(f"No handler function for task `{workname}`")
 
 class Processor:
-    handlers: dict[str, Callable[[dict], None]]
+    handlers: Dict[str, Callable[[dict], None]]
     def __init__(self, num_workers: int = 4):
         self.queue = mp.Queue()
         self.workers: list["Worker"] = []
@@ -65,7 +65,7 @@ class Processor:
             return func
         return decorator
 
-    def register_handlers(self, handlers: dict[str, Callable[[dict], None]]):
+    def register_handlers(self, handlers: Dict[str, Callable[[dict], None]]):
         self.handlers.update(handlers)
 
     def run(self):
