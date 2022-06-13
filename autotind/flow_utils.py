@@ -3,7 +3,6 @@ import io
 import json
 from mitmproxy import http
 from typing import Any, List, Optional
-from mitmproxy.script import concurrent
 
 def read_json_body(flow: http.HTTPFlow) -> Optional[dict]:
     try:
@@ -16,6 +15,7 @@ def read_json_body(flow: http.HTTPFlow) -> Optional[dict]:
         return None
 
 class BaseInterceptor(ABC):
+    type = 'response'
     @abstractmethod
     def accepts(self, flow: http.HTTPFlow) -> bool:
         return NotImplemented
@@ -25,7 +25,11 @@ class BaseInterceptor(ABC):
         return NotImplemented
 
     def __call__(self, flow: http.HTTPFlow):
-        if self.accepts(flow):
+        if not self.accepts(flow):
+            return
+        if self.type == 'request':
+            self.process(flow, None)
+        elif self.type == 'response':
             body = read_json_body(flow)
             self.process(flow, body)
 
@@ -33,7 +37,12 @@ class InterceptorMiddleware:
     def __init__(self, interceptors: List[BaseInterceptor]):
         self.interceptors = interceptors
 
+    def request(self, flow: http.HTTPFlow):
+        interceptors = [i for i in self.interceptors if i.type == 'request']
+        for interceptor in interceptors:
+            interceptor(flow)
     
     def response(self, flow: http.HTTPFlow):
-        for interceptor in self.interceptors:
+        interceptors = [i for i in self.interceptors if i.type == 'response']
+        for interceptor in interceptors:
             interceptor(flow)

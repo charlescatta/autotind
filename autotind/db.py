@@ -1,106 +1,164 @@
 import json
-from typing import Optional
-from sqlalchemy import String, Column, ForeignKey, DateTime, create_engine
-from sqlalchemy.orm import relationship, sessionmaker, Session, scoped_session
-from sqlalchemy.ext.declarative import declarative_base
-from enum import Enum
+import requests
+from PIL import Image
+from typing import Any
 from pathlib import Path
+from loguru import logger
 from dateutil import parser
-from .config import config
-
-class PType(Enum):
-    REC = 'recommendation'
-    DISLIKE = 'dislike'
-    MATCH = 'match'
-    LIKE = 'like'
-
-
-class ImageStatus(Enum):
-    NOTDOWNLOADED = 'not-downloaded'
-    DOWNLOADING = 'downloading'
-    DOWNLOADED = 'downloaded'
-    ERROR = 'error'
+from autotind.person import Label, Person, Photo
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import scoped_session, sessionmaker, relationship
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String, create_engine
 
 Base = declarative_base()
 
-class DB:
-    def __init__(self):
-        self.engine = create_engine(config.DB_URL)
-        Base.metadata.create_all(self.engine)
-        sess_factory = sessionmaker(bind=self.engine)
-        self.Session = scoped_session(sess_factory)
-    
-    def create_session(self) -> Session:
-        return self.Session()
+def is_valid_image(path: str | Path) -> bool:
+    try:
+        Image.open(path)
+        return True
+    except Exception as e:
+        return False
 
-class Photo(Base):
+
+class InvalidPhotoURLException(Exception):
+    pass
+
+class PhotoDB(Base):
     __tablename__ = 'photo'
     id = Column(String, primary_key=True)
-    person_id = Column(String, ForeignKey('person.id'), nullable=False)
-    url = Column(String, nullable=False)
-    filename = Column(String, nullable=False)
+    user_id = Column(String, ForeignKey('person._id'), nullable=False)
+    url = Column(String)
+    fileName = Column(String, nullable=False)
     crop_info = Column(String, nullable=True)
-    status = Column(String, nullable=False, default=ImageStatus.NOTDOWNLOADED.value)
+    media_type = Column(String, nullable=False)
+    rank = Column(Integer, nullable=True)
+    score = Column(Float, nullable=True)
+    win_count = Column(Integer, nullable=True)
 
-    def __init__(self, id: str, person_id: str, url: str, filename: str, crop_info: str, status: ImageStatus):
-        self.id = id
-        self.person_id = person_id
-        self.url = url
-        self.filename = filename
-        self.crop_info = crop_info
-        self.status = status
-    
-    @property
-    def save_path(self):
-        return Path(config.IMG_SAVE_PATH) / self.person_id / self.filename
-
-    def __repr__(self) -> str:
-        return f"<Photo(id='{self.id}', person_id='{self.person_id}', filename='{self.filename}', status='{self.status}')>"
     @staticmethod
-    def from_json(person_id: str, photo_data: dict) -> Optional['Photo']:
-        if 'crop_info' in photo_data:
-            crop_info = json.dumps(photo_data['crop_info'])
-        else:
-            crop_info = None
-        return Photo(
-            id=photo_data.get('id'),
-            person_id=person_id,
-            url=photo_data.get('url'),
-            filename=photo_data.get('fileName'),
-            crop_info=crop_info,
-            status=ImageStatus.NOTDOWNLOADED.value
+    def from_photo(photo: Photo) -> 'PhotoDB':
+        return PhotoDB(
+            id=photo.id,
+            user_id=photo.user_id,
+            url=photo.url,
+            fileName=photo.fileName,
+            crop_info=json.dumps(photo.crop_info),
+            media_type=photo.media_type,
+            score=photo.score,
+            win_count=photo.win_count,
+            rank=photo.rank
         )
 
-class Person(Base):
-    __tablename__ = 'person'
-    id = Column(String, primary_key=True)
-    type = Column(String, nullable=False, default=PType.REC)
-    name = Column(String)
-    birthday = Column(DateTime)
-    photos = relationship("Photo", backref="person")
+    def to_photo(self) -> "Photo":
+        return Photo(
+            id=self.id,
+            user_id=self.user_id,
+            url=self.url,
+            fileName=self.fileName,
+            crop_info=json.loads(self.crop_info),
+            media_type=self.media_type,
+            score=self.score,
+            win_count=self.win_count,
+            rank=self.rank
+        )
 
-    def __repr__(self) -> str:
-        return f"<Person(id={self.id}, name={self.name}, birthday={self.birthday} photos={len(self.photos)}) type={self.type}>"
-    
+class PersonDB(Base):
+    __tablename__ = 'person'
+    _id = Column(String, primary_key=True)
+    label = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    birth_date = Column(DateTime)
+    bio = Column(String, nullable=True)
+    gender = Column(Float, nullable=True)
+    distance_mi = Column(Float, nullable=True)
+    photos = relationship("PhotoDB", backref="person")
+
     @staticmethod
-    def from_json(user: dict, type: PType = PType.REC) -> Optional['Person']:
-        user_id = user.get('_id')
-        if user_id is None:
-            return None
-        photos = [ Photo.from_json(user_id, photo) for photo in user.get('photos', []) ]
-        photos = [ p for p in photos if p is not None ]
-        birthday = parser.parse(user.get('birth_date')) if user.get('birth_date') else None
-        return Person(
-            id=user_id,
-            name=user.get('name'),
-            birthday=birthday,
-            type=type,
+    def from_person(person: Person) -> "PersonDB":
+        photos = [ PhotoDB.from_photo(photo) for photo in person.photos ]
+        return PersonDB(
+            _id=person._id,
+            label=person.label,
+            name=person.name,
+            birth_date=parser.parse(person.birth_date),
+            bio=person.bio,
+            gender=person.gender,
+            distance_mi=person.distance_mi,
             photos=photos
         )
+    
+    def to_person(self) -> "Person":
+        return Person(
+            _id=self._id,
+            label=self.label,
+            name=self.name,
+            birth_date=self.birth_date.isoformat(),
+            bio=self.bio,
+            gender=self.gender,
+            distance_mi=self.distance_mi,
+            photos=[p.to_photo() for p in self.photos]
+        )
 
-    def save(self, session: Session):
-        for photo in self.photos:
-            session.merge(photo)
-        session.merge(self)
+class PersonRepo:
+    def __init__(self, db_url: str) -> None:
+        self.engine = create_engine(db_url)
+        self.Session = scoped_session(sessionmaker(bind=self.engine))
+        Base.metadata.create_all(self.engine)
+    
+    def upsert(self, person: Person):
+        session = self.Session()
+        try:
+            p = PersonDB.from_person(person)
+            self._download_photos(person)
+            session.merge(p)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            raise e
+
+    def _download_photos(self, person: Person):
+        path = person.get_path('./images')
+        path.mkdir(parents=True, exist_ok=True)
+
+        for photo in person.photos:
+            path = photo.get_path('./images')
+            if path.exists():
+                if is_valid_image(path):
+                    continue
+                else:
+                    logger.info(f"Deleting invalid image: {path}")
+                    path.unlink()
+
+            try:
+                req = requests.get(photo.url, stream=True)
+                req.raise_for_status()
+
+                with open(path, 'wb') as f:
+                    for chunk in req.iter_content(chunk_size=1024):
+                        if chunk:
+                            f.write(chunk)
+                            f.flush()
+
+            except Exception as e:
+                path.unlink(missing_ok=True)
+                if req.status_code == 403:
+                    e = f"403 Forbidden: {photo.url[:50]}"
+                raise InvalidPhotoURLException(e)
+
+    def like(self, id: str):
+        session = self.Session()
+        session.query(PersonDB).where(PersonDB._id == id).update({ "label": Label.LIKE.value })
+        session.commit()
+    
+    def dislike(self, id: str):
+        session = self.Session()
+        session.query(PersonDB).where(PersonDB._id == id).update({ "label": Label.DISLIKE.value })
         session.commit()
 
+    def get_all(self) -> list[Person]:
+        session = self.Session()
+        return [ p.to_person() for p in session.query(PersonDB).all() ]
+
+    def where(self, condition: dict[str, Any]) -> list[Person]:
+        session = self.Session()
+        return [ p.to_person() for p in session.query(PersonDB).filter_by(**condition).all() ]
