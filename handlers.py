@@ -17,7 +17,7 @@ def register_work_handlers(processor: Processor):
     @processor.handler(WorkTypes.add_rec.value)
     def handle_recs(data: dict):
         try:
-            person = Person.from_dict(data, Label.REC.value)
+            person = Person.from_dict({ **data, 'label': Label.REC.value })
             if person:
                 logger.info(f"Intercepted Rec: {person.name}")
                 personRepo.upsert(person)
@@ -29,7 +29,7 @@ def register_work_handlers(processor: Processor):
 
     @processor.handler(WorkTypes.add_match.value)
     def handle_matches(data: dict):
-        person = Person.from_dict(data, Label.MATCH.value)
+        person = Person.from_dict({ **data, 'label': Label.MATCH.value })
         if person:
             logger.info(f"Intercepted match: {person.name}")
             personRepo.upsert(person)

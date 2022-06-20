@@ -1,0 +1,11 @@
+{
+    "sqltools.connections": [
+        {
+            "previewLimit": 50,
+            "driver": "SQLite",
+            "name": "tind",
+            "database": "C:\\Users\\charl\\Downloads\\GOG_Galaxy_2.0.exe"
+        }
+    ],
+    "sqltools.useNodeRuntime": true
+}

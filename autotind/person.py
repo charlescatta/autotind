@@ -51,7 +51,7 @@ class Photo:
         try:
             return Photo(**data)
         except Exception as e:
-            logger.warning("Error creating photo: ", e)
+            logger.warning(f"Error creating photo: {e}")
             return None
 
 @dataclass(frozen=True)
@@ -75,7 +75,7 @@ class Person:
         return Path(root_dir) / Path(self._id)
 
     @staticmethod
-    def from_dict(person_data: dict, label) -> Optional['Person']:
+    def from_dict(person_data: dict) -> Optional['Person']:
         data = {}
         user_id = person_data.get('_id', None)
 
@@ -90,9 +90,9 @@ class Person:
             if value != None:
                 data[field.name] = value
         try:
-            return Person(**data, label=label)
+            return Person(**data)
         except Exception as e:
-            logger.warning("Error creating person: ", e)
+            logger.warning(f"Error creating person: {e}")
             return None
 
 

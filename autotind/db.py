@@ -107,7 +107,10 @@ class PersonRepo:
     
     def upsert(self, person: Person):
         session = self.Session()
+
         try:
+            if len(person.photos) == 0:
+                raise Exception("Person has no photos")
             p = PersonDB.from_person(person)
             self._download_photos(person)
             session.merge(p)
@@ -149,16 +152,22 @@ class PersonRepo:
         session = self.Session()
         session.query(PersonDB).where(PersonDB._id == id).update({ "label": Label.LIKE.value })
         session.commit()
+        session.close()
     
     def dislike(self, id: str):
         session = self.Session()
         session.query(PersonDB).where(PersonDB._id == id).update({ "label": Label.DISLIKE.value })
         session.commit()
+        session.close()
 
     def get_all(self) -> List[Person]:
         session = self.Session()
-        return [ p.to_person() for p in session.query(PersonDB).all() ]
+        data = [ p.to_person() for p in session.query(PersonDB).all() ]
+        session.close()
+        return data
 
     def where(self, condition: Dict[str, Any]) -> List[Person]:
         session = self.Session()
-        return [ p.to_person() for p in session.query(PersonDB).filter_by(**condition).all() ]
+        data = [ p.to_person() for p in session.query(PersonDB).filter_by(**condition).all() ]
+        session.close()
+        return data
